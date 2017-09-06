@@ -482,7 +482,7 @@ def scale_marathon_app_instances(args, app, instances):
 
 
 def deploy_marathon_app(args, app):
-    url = args.marathon + "/v2/apps"
+    url = args.marathon + "/v2/apps?force=true"
     data = json.dumps(app)
     headers = {'Content-Type': 'application/json'}
     try:
@@ -601,7 +601,23 @@ def get_deployment_group(app):
 def fetch_previous_deploys(args, app):
     apps = list_marathon_apps(args)
     app_deployment_group = get_deployment_group(app)
-    return [a for a in apps if get_deployment_group(a) == app_deployment_group]
+
+    apps_status = [a for a in apps if get_deployment_group(a) == app_deployment_group]
+
+    for a in apps_status:
+        # If the old app has unhealthy or staged tasks, delete the app
+        if (a["tasksUnhealthy"] > 0 or a["tasksStaged"] > 0):
+            logger.error("Deleting the existing app since it is unhealthy")
+            delete_marathon_app(args, a)
+            return []
+
+        # If the old app is suspended, delete the app
+        elif (a["tasksHealthy"] == 0 and a["tasksRunning"] == 0):
+            logger.error("Deleting the existing app since it is suspended")
+            delete_marathon_app(args, a)
+            return []
+
+    return apps_status
 
 
 def prepare_deploy(args, previous_deploys, app):
